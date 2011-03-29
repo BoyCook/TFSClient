@@ -71,11 +71,6 @@ class Finder
           path = path + "#{values['groupId'].gsub(".", "/")}/#{values['artefactId']}/#{values['version']}"
           file_name = "#{values['artefactId']}-#{values['version']}#{ext}"
           file = "#{path}/#{file_name}"
-
-          if !File::directory?(path) then
-            puts "#{path} not found, creating..."
-            FileUtils.mkpath path
-          end          
           
           #TODO also check local meta data for cache expire
           if File::file?(file) then
@@ -83,6 +78,10 @@ class Finder
             File.copy(file, loc)
             puts "Getting file from local repository: #{file}"                        
           else
+            if !File::directory?(path) then
+              puts "#{path} not found, creating..."
+              FileUtils.mkpath path
+            end            
             #TODO hit service for file location and get file
             puts "Getting file from web: #{file}"            
           end          

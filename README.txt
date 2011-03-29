@@ -1,4 +1,4 @@
-Text File Synchroniser:
+Text File Synchroniser client:
 
 A synchroniser for text based files that reside in multiple (VCS) repositories, available over HTTP
 
