@@ -9,7 +9,7 @@
 #     tfa 
 #
 # == Usage 
-#   tfa
+#   tfa [options] action group_id artefact_id version
 #
 #   For help use: tfa -h
 #
@@ -32,6 +32,8 @@ require 'ostruct'
 require 'date'
 require 'FileUtils'
 require 'ftools'
+require 'net/http'
+require 'net/https'
 
 include REXML
 
@@ -138,6 +140,71 @@ class Finder
   end
 end
 
+class TFS
+  def initialize
+    @base_url = 'http://localhost:8080/tfs/service'
+  end  
+  
+  def export(group_id, artefact_id, version)
+    url = "#{@base_url}/files/#{group_id}/#{artefact_id}/#{version}/"
+    puts "Getting meta-data from: #{url}"
+    resp = Net::HTTP.get_response(URI.parse(url))
+    doc = Document.new(resp.body)
+    file_url = find_node(doc, 'url')    
+    artefact_id = find_node(doc, 'artefactId')        
+    group_id = find_node(doc, 'groupId')            
+    version = find_node(doc, 'version')            
+    extension = find_node(doc, 'extension')            
+    file_name = "#{artefact_id}-#{version}.#{extension}"
+    conf_name = "#{file_name}.tfs"
+        
+    if !File::directory?('.tfs') then
+      Dir.mkdir('.tfs') 
+    end
+    
+      # File.open(local_filename, 'a') {|f| f.write(doc) }          
+    if !File::file?(".tfs/#{conf_name}") then
+      File.open(".tfs/#{conf_name}", 'w') do |f| 
+        f << "groupId=#{group_id}\n"
+        f << "artefactId=#{artefact_id}\n"
+        f << "version=#{version}\n"
+        f << "fileName=#{file_name}\n"        
+        f << "url=#{file_url}\n"
+      end      
+    end
+    
+    if File::file?(file_name) then
+      puts "File #{file_name} already exists, consider an update instead"
+    else
+      download(file_url, file_name)      
+    end
+  end
+  
+  def find_node(doc, node)
+    XPath.each(doc, "//#{node}") do |e| 
+      return e.text
+    end
+  end  
+  
+  #TODO 404 etc handling
+  def download(url, file_name)
+    puts "Downloading file [#{file_name}] from: #{url}"    
+    httpsuri = URI.parse(url)
+    request = Net::HTTP.new(httpsuri.host, httpsuri.port)
+
+    if httpsuri.port == 443
+      request.use_ssl = true
+      request.verify_mode = OpenSSL::SSL::VERIFY_NONE
+    end
+
+    response = request.get(httpsuri.path)    
+    
+    open(file_name, "wb") do |file|
+        file.write(response.body)
+    end    
+  end
+end
+
 class App_Runner
   VERSION = '0.0.1'
   attr_reader :options
@@ -155,7 +222,7 @@ class App_Runner
        puts "Start at #{DateTime.now}\n\n" if @options.verbose
        output_options if @options.verbose
        process_arguments            
-       setup
+       # setup
        start
        puts "\nFinished at #{DateTime.now}" if @options.verbose
      else
@@ -164,8 +231,22 @@ class App_Runner
   end
   
   def start
-    finder = Finder.new(Dir.pwd)
-    finder.run
+    puts "Action: '#{@action}'"
+    tfs = TFS.new()
+    
+    case @action
+    when 'export'
+      tfs.export(@group_id, @artefact_id, @version)
+    when 'list'      
+      #TODO hit service and list available items
+    when 'update'
+      #TODO find .tfs files and update
+    when 'find'
+      # finder = Finder.new(Dir.pwd)
+      # finder.run    
+    else
+      puts "Unknown action #{@action} exiting"
+    end
   end
   
   protected
@@ -208,12 +289,14 @@ class App_Runner
     end
 
     def arguments_valid?
-      # true if @arguments.length == 5
-      true
+      true if @arguments.length >= 1
     end
     
     def process_arguments
-      # @dir = @arguments[0]
+      @action = @arguments[0]
+      @group_id = @arguments[1]
+      @artefact_id = @arguments[2]      
+      @version = @arguments[3]
     end
     
     def output_help
@@ -233,3 +316,5 @@ end
 # Create and run the application
 app = App_Runner.new(ARGV)
 app.run
+
+#ruby tfsclient/tfs.rb export org.cccs.jslibs jquery.collapsible 1.0.0
