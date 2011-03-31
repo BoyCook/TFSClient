@@ -47,15 +47,15 @@ class String
   end  
 end
 
-class Finder  
+class Utils  
   def self.find_files(dir)
     files = []
   
   	Dir.foreach(dir) do |entry|   
   	  if File::directory?("#{dir}/#{entry}") and entry.match('^\.tfs') then	    
-      	Dir.foreach(dir) do |entry|   
-          if File::file?("#{dir}/#{entry}") then
-            files.add"#{dir}/#{entry}"
+      	Dir.foreach("#{dir}/#{entry}") do |file|   
+          if File::file?("#{dir}/#{entry}/#{file}") then
+            files.push "#{dir}/#{entry}/#{file}"
      		  end  	  
       	end  	    
   	  elsif File::directory?("#{dir}/#{entry}") and entry.match('^\.') then
@@ -64,39 +64,52 @@ class Finder
         files.concat(find_files("#{dir}/#{entry}"))
    		end  	  
   	end    
-  	
-    # loc = "#{dir}/#{entry}"
-    # file = File.open(loc, 'r')
-    #         ext = File.extname(loc)
-    #         if is_tfa_managed? file then
-    #   values = read_header file
-    #   path = "#{ENV['HOME']}/.tfa/repository/"
-    #           path = path + "#{values['groupId'].gsub(".", "/")}/#{values['artefactId']}/#{values['version']}"
-    #           file_name = "#{values['artefactId']}-#{values['version']}#{ext}"
-    #           file = "#{path}/#{file_name}"
-    #           
-    #           #TODO also check local meta data for cache expire
-    #           if File::file?(file) then
-    #             File.delete(loc)
-    #             File.copy(file, loc)
-    #             puts "Getting file from local repository: #{file}"                        
-    #           else
-    #             if !File::directory?(path) then
-    #               puts "#{path} not found, creating..."
-    #               FileUtils.mkpath path
-    #             end            
-    #             #TODO hit service for file location and get file
-    #             puts "Getting file from web: #{file}"            
-    #           end  	
-  	
   	files
+  end  
+  
+  def self.read_file(file_name)
+    file = File.open(file_name)
+    values = {}
+    
+    file.each_line do |line|
+      if line.include? '=' then
+        key = line[0, line.index('=')]
+        value = line[line.index('=')+1, line.length].strip
+        values[key] = value
+      end
+    end
+    values    
   end
   
-  def print_hash(hash)
+  def self.node_value(doc, node)
+    XPath.each(doc, "#{node}") do |e| 
+      return e.text
+    end
+  end
+
+  #TODO 404 etc handling
+  def self.download(url, file_name)
+     puts "Downloading file [#{file_name}] from: #{url}"    
+     httpsuri = URI.parse(url)
+     request = Net::HTTP.new(httpsuri.host, httpsuri.port)
+
+     if httpsuri.port == 443
+       request.use_ssl = true
+       request.verify_mode = OpenSSL::SSL::VERIFY_NONE
+     end
+
+     response = request.get(httpsuri.path)    
+
+     open(file_name, "wb") do |file|
+         file.write(response.body)
+     end    
+  end  
+    
+  def self.print_hash(hash)
     hash.each do | key, value |
       puts "Key [#{key}] Value [#{value}]"
     end    
-  end
+  end  
   
   def read_header(file)
     started = false
@@ -141,23 +154,24 @@ class TFS
     puts "Getting meta-data from: #{url}"
     resp = Net::HTTP.get_response(URI.parse(url))
     doc = Document.new(resp.body)
-    file_url = find_node(doc, 'url')    
-    artefact_id = find_node(doc, 'artefactId')        
-    group_id = find_node(doc, 'groupId')            
-    version = find_node(doc, 'version')            
-    extension = find_node(doc, 'extension')            
+    file_url = Utils.node_value(doc, '/file/url')    
+    artefact_id = Utils.node_value(doc, '/file/artefactId')        
+    group_id = Utils.node_value(doc, '/file/groupId')            
+    version = Utils.node_value(doc, '/file/version')            
+    extension = Utils.node_value(doc, '/file/extension')            
     file_name = "#{artefact_id}-#{version}.#{extension}"
     conf_name = "#{file_name}.tfs"
-        
+
     if !File::directory?('.tfs') then
       Dir.mkdir('.tfs') 
     end
-  
+      
     if !File::file?(".tfs/#{conf_name}") then
       File.open(".tfs/#{conf_name}", 'w') do |f| 
         f << "groupId=#{group_id}\n"
         f << "artefactId=#{artefact_id}\n"
         f << "version=#{version}\n"
+        f << "directory=#{Dir.pwd}\n"                
         f << "fileName=#{file_name}\n"        
         f << "url=#{file_url}\n"
       end      
@@ -166,31 +180,34 @@ class TFS
     if File::file?(file_name) then
       puts "File #{file_name} already exists, consider an update instead"
     else
-      download(file_url, file_name)      
+      Utils.download(file_url, file_name)      
     end
   end
   
-  def find_node(doc, node)
-    XPath.each(doc, "//#{node}") do |e| 
-      return e.text
-    end
-  end  
+  def update
+    #TODO find .tfs files and get latest version
+      files = Utils.find_files(Dir.pwd)
+      if files.length == 0 then
+        puts 'No files found to update'
+      end
+
+      files.each do |file| 
+        values = Utils.read_file(file)        
+        url = values['url']
+        directory = values['directory']  
+        file_name = values['fileName']
+        
+        Utils.download(url, "#{directory}/#{file_name}")      
+      end
+  end
   
-  #TODO 404 etc handling
-  def download(url, file_name)
-    puts "Downloading file [#{file_name}] from: #{url}"    
-    httpsuri = URI.parse(url)
-    request = Net::HTTP.new(httpsuri.host, httpsuri.port)
-
-    if httpsuri.port == 443
-      request.use_ssl = true
-      request.verify_mode = OpenSSL::SSL::VERIFY_NONE
-    end
-
-    response = request.get(httpsuri.path)    
+  def list
+    resp = Net::HTTP.get_response(URI.parse("#{@base_url}/files"))
+    doc = Document.new(resp.body)    
     
-    open(file_name, "wb") do |file|
-        file.write(response.body)
+    XPath.each(doc, '/resources/file') do |file| 
+      # puts "#{file} \n\n\n"
+      puts "#{Utils.node_value(file, 'groupId')} #{Utils.node_value(file, 'artefactId')}  #{Utils.node_value(file, 'version')}"
     end    
   end
 end
@@ -226,12 +243,15 @@ class App_Runner
     
     case @action
     when 'export'
-      tfs.export(@group_id, @artefact_id, @version)
+      if !@group_id.nil? and !@artefact_id.nil? and !@version.nil? then
+        tfs.export(@group_id, @artefact_id, @version)
+      else
+        puts 'You must specify groupId, artefactId and version'
+      end
     when 'list'      
-      #TODO hit service and list available items
+      tfs.list
     when 'update'
-      #TODO find .tfs files and get latest version
-        puts Finder.find_files(Dir.pwd)
+      tfs.update
     when 'find'
       # finder = Finder.new(Dir.pwd)
       # finder.run    
