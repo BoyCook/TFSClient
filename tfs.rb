@@ -47,58 +47,49 @@ class String
   end  
 end
 
-class Finder
-  def initialize(dir)
-    @dir = dir
-  end
+class Finder  
+  def self.find_files(dir)
+    files = []
   
-  def run
-    puts "Starting finder at: #{@dir}"
-    find_files(@dir)
-  end
-  
-  def find_files(dir)
   	Dir.foreach(dir) do |entry|   
-  	  if File::directory?("#{dir}/#{entry}") and entry.match('^\.') then
-  	    #Ignoring dirs begining with .
+  	  if File::directory?("#{dir}/#{entry}") and entry.match('^\.tfs') then	    
+      	Dir.foreach(dir) do |entry|   
+          if File::file?("#{dir}/#{entry}") then
+            files.add"#{dir}/#{entry}"
+     		  end  	  
+      	end  	    
+  	  elsif File::directory?("#{dir}/#{entry}") and entry.match('^\.') then
+        # puts "Ignoring #{dir}/#{entry}"
    		elsif File::directory?("#{dir}/#{entry}") then
-        find_files("#{dir}/#{entry}")
-      else 
-	      loc = "#{dir}/#{entry}"
-	      file = File.open(loc, 'r')
-        ext = File.extname(loc)
-        if is_tfa_managed? file then
-	        values = read_header file
-	        path = "#{ENV['HOME']}/.tfa/repository/"
-          path = path + "#{values['groupId'].gsub(".", "/")}/#{values['artefactId']}/#{values['version']}"
-          file_name = "#{values['artefactId']}-#{values['version']}#{ext}"
-          file = "#{path}/#{file_name}"
-          
-          #TODO also check local meta data for cache expire
-          if File::file?(file) then
-            File.delete(loc)
-            File.copy(file, loc)
-            puts "Getting file from local repository: #{file}"                        
-          else
-            if !File::directory?(path) then
-              puts "#{path} not found, creating..."
-              FileUtils.mkpath path
-            end            
-            #TODO hit service for file location and get file
-            puts "Getting file from web: #{file}"            
-          end          
-        end
+        files.concat(find_files("#{dir}/#{entry}"))
    		end  	  
   	end    
-  end
-  
-  def get_file(domain, path, file)
-    Net::HTTP.start(domain) do |http|
-        resp = http.get("#{path}/#{file}")
-        open(file, "wb") do |file|
-            file.write(resp.body)
-        end
-    end
+  	
+    # loc = "#{dir}/#{entry}"
+    # file = File.open(loc, 'r')
+    #         ext = File.extname(loc)
+    #         if is_tfa_managed? file then
+    #   values = read_header file
+    #   path = "#{ENV['HOME']}/.tfa/repository/"
+    #           path = path + "#{values['groupId'].gsub(".", "/")}/#{values['artefactId']}/#{values['version']}"
+    #           file_name = "#{values['artefactId']}-#{values['version']}#{ext}"
+    #           file = "#{path}/#{file_name}"
+    #           
+    #           #TODO also check local meta data for cache expire
+    #           if File::file?(file) then
+    #             File.delete(loc)
+    #             File.copy(file, loc)
+    #             puts "Getting file from local repository: #{file}"                        
+    #           else
+    #             if !File::directory?(path) then
+    #               puts "#{path} not found, creating..."
+    #               FileUtils.mkpath path
+    #             end            
+    #             #TODO hit service for file location and get file
+    #             puts "Getting file from web: #{file}"            
+    #           end  	
+  	
+  	files
   end
   
   def print_hash(hash)
@@ -161,8 +152,7 @@ class TFS
     if !File::directory?('.tfs') then
       Dir.mkdir('.tfs') 
     end
-    
-      # File.open(local_filename, 'a') {|f| f.write(doc) }          
+  
     if !File::file?(".tfs/#{conf_name}") then
       File.open(".tfs/#{conf_name}", 'w') do |f| 
         f << "groupId=#{group_id}\n"
@@ -240,7 +230,8 @@ class App_Runner
     when 'list'      
       #TODO hit service and list available items
     when 'update'
-      #TODO find .tfs files and update
+      #TODO find .tfs files and get latest version
+        puts Finder.find_files(Dir.pwd)
     when 'find'
       # finder = Finder.new(Dir.pwd)
       # finder.run    
