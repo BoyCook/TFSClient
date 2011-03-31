@@ -5,11 +5,17 @@
 #   scanning file headers to see if they are tfa managed
 #
 # == Examples
-#   Basic:
-#     tfa 
+#   File Export:
+#     tfs export org.cccs.jslibs jsMap 1.0
+#   Update existing files:
+#     tfs update 
+#   List available files:
+#     tfs list
+#   Remove exported files:
+#     tfs clean
 #
 # == Usage 
-#   tfa [options] action group_id artefact_id version
+#   tfs [options] action group_id artefact_id version
 #
 #   For help use: tfa -h
 #
@@ -110,38 +116,6 @@ class Utils
       puts "Key [#{key}] Value [#{value}]"
     end    
   end  
-  
-  def read_header(file)
-    started = false
-    values = {}
-    
-    file.each_line do |line|
-      if line.strip.eql? '' and !started then      
-        #Opening whitespace is ok        
-      elsif line.strip.starts_with? '//' and !started then
-        #Skipping initial comments
-      elsif !line.strip.starts_with? '/*' and !started then
-        #No opening comment header
-        break                
-      elsif line.strip.starts_with? '/*' and !started then
-        started = true
-      elsif line.strip.ends_with? '*/' and started then
-        #You've reached the end of the opening comments
-        break
-      else #Parse the line
-        if line.include? '@' and line.include? '>=' then
-          key = line[line.index('@') + 1, line.index('>=') - 4].strip
-          value = line[line.index('>=') + 2, line.length].strip
-          values[key] = value
-        end
-      end
-    end
-    values
-  end
-  
-  def is_tfa_managed?(file) 
-    file.first.include? '@tfamanaged'
-  end
 end
 
 class TFS
@@ -185,7 +159,6 @@ class TFS
   end
   
   def update
-    #TODO find .tfs files and get latest version
       files = Utils.find_files(Dir.pwd)
       if files.length == 0 then
         puts 'No files found to update'
@@ -194,19 +167,61 @@ class TFS
       files.each do |file| 
         values = Utils.read_file(file)        
         url = values['url']
-        directory = values['directory']  
-        file_name = values['fileName']
-        
-        Utils.download(url, "#{directory}/#{file_name}")      
+        file_name = "#{values['directory']}/#{values['fileName']}"
+        Utils.download(url, file_name)      
+      end
+  end
+  
+  def clean
+      current_dir = Dir.pwd
+      files = Utils.find_files(current_dir)
+      if !files.nil? and files.length > 0 then
+        files.each do |file| 
+          values = Utils.read_file(file)        
+          file_name = "#{values['directory']}/#{values['fileName']}"
+          
+          if File::file?(file_name) then
+            File.delete(file_name)
+          end          
+        end
+        FileUtils.rm_rf "#{current_dir}/.tfs"
+      else
+        puts 'You have no files managed by tfs'
       end
   end
   
   def list
-    resp = Net::HTTP.get_response(URI.parse("#{@base_url}/files"))
+    files = Utils.find_files(Dir.pwd)          
+    if !files.nil? and files.length > 0 then
+      puts 'Files managed by tfs:'
+      files.each do |file|
+        values = Utils.read_file(file)        
+        puts "#{values['directory']}/#{values['fileName']}"
+      end
+    else
+      puts 'You have no files managed by tfs'
+    end      
+  end
+  
+  def search(group_id, artefact_id, version)
+    url = "#{@base_url}/files/"
+    if !group_id.nil? then
+      url = "#{url}#{group_id}/"
+    end    
+    
+    if !artefact_id.nil? then
+      url = "#{url}#{artefact_id}/"
+    end
+    
+    if  !version.nil? then
+      url = "#{url}#{version}/"
+    end
+            
+    puts "Searching #{url}"
+    resp = Net::HTTP.get_response(URI.parse(url))
     doc = Document.new(resp.body)    
     
     XPath.each(doc, '/resources/file') do |file| 
-      # puts "#{file} \n\n\n"
       puts "#{Utils.node_value(file, 'groupId')} #{Utils.node_value(file, 'artefactId')}  #{Utils.node_value(file, 'version')}"
     end    
   end
@@ -252,9 +267,10 @@ class App_Runner
       tfs.list
     when 'update'
       tfs.update
-    when 'find'
-      # finder = Finder.new(Dir.pwd)
-      # finder.run    
+    when 'clean'
+      tfs.clean
+    when 'search'
+      tfs.search(@group_id, @artefact_id, @version)
     else
       puts "Unknown action #{@action} exiting"
     end
