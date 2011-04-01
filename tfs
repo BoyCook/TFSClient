@@ -93,6 +93,31 @@ class Utils
     end
   end
 
+  def self.is_bigger_version?(v1, v2)
+    if (Integer(v2[0]) > Integer(v1[0])) then
+      true
+    elsif (Integer(v2[2]) > Integer(v1[2])) then
+      true      
+    elsif (Integer(v2[4]) > Integer(v1[4])) then
+      true      
+    elsif (Integer(v2[6]) > Integer(v1[6])) then
+      true      
+    else
+      false
+    end
+  end
+
+  def self.get_files(url)
+    resp = Net::HTTP.get_response(URI.parse(url))
+    doc = Document.new(resp.body)    
+    files = []
+    XPath.each(doc, '/resources/file') do |file| 
+      file = TFSFile.new(Utils.node_value(file, 'groupId'), Utils.node_value(file, 'artefactId'), Utils.node_value(file, 'version'), Utils.node_value(file, 'extension'), Utils.node_value(file, 'url'))
+      files.push file 
+    end    
+    files
+  end
+
   #TODO 404 etc handling
   def self.download(url, file_name)
      puts "Downloading file [#{file_name}] from: #{url}"    
@@ -116,6 +141,22 @@ class Utils
       puts "Key [#{key}] Value [#{value}]"
     end    
   end  
+end
+
+class TFSFile
+  attr_accessor :group_id
+  attr_accessor :artefact_id
+  attr_accessor :version
+  attr_accessor :extension      
+  attr_accessor :url
+  
+  def initialize(group_id, artefact_id, version, extension, url)
+    @group_id = group_id
+    @artefact_id = 
+    @version = version
+    @extension = extension
+    @url = url
+  end
 end
 
 class TFS
@@ -147,6 +188,7 @@ class TFS
         f << "version=#{version}\n"
         f << "directory=#{Dir.pwd}\n"                
         f << "fileName=#{file_name}\n"        
+        f << "extension=#{extension}\n"                
         f << "url=#{file_url}\n"
       end      
     end
@@ -172,6 +214,29 @@ class TFS
       end
   end
   
+  def upgrade
+    files = Utils.find_files(Dir.pwd)          
+    if !files.nil? and files.length > 0 then
+      files.each do |file|
+        values = Utils.read_file(file)        
+        group_id = values['groupId']
+        artefact_id = values['artefactId']
+        version = values['version']
+        directory = values['directory']        
+        extension = values['extension']        
+        files = Utils.get_files("#{@base_url}/files/#{group_id}/#{artefact_id}/")
+        files.each do |file| 
+          if Utils.is_bigger_version?(version, file.version) and !File::file?("#{directory}/#{artefact_id}-#{file.version}.#{extension}") then
+            puts "Getting newer version of #{group_id} #{artefact_id}: #{file.version}"
+            export(group_id, artefact_id, file.version)
+          end
+        end
+      end
+    else
+      puts 'You have no files managed by tfs'
+    end    
+  end
+  
   def clean
       current_dir = Dir.pwd
       files = Utils.find_files(current_dir)
@@ -188,7 +253,7 @@ class TFS
       else
         puts 'You have no files managed by tfs'
       end
-  end
+  end  
   
   def list
     files = Utils.find_files(Dir.pwd)          
@@ -201,7 +266,7 @@ class TFS
     else
       puts 'You have no files managed by tfs'
     end      
-  end
+  end  
   
   def search(group_id, artefact_id, version)
     url = "#{@base_url}/files/"
@@ -267,6 +332,8 @@ class App_Runner
       tfs.list
     when 'update'
       tfs.update
+    when 'upgrade'
+      tfs.upgrade      
     when 'clean'
       tfs.clean
     when 'search'
