@@ -111,12 +111,26 @@ class Utils
     end
   end
 
-  def self.get_files(url)
+  def self.get_files(group_id, artefact_id, version)
+    url = "http://localhost:8080/tfs/service/files/"
+    if !group_id.nil? then
+      url = "#{url}#{group_id}/"
+    end    
+    
+    if !artefact_id.nil? then
+      url = "#{url}#{artefact_id}/"
+    end
+    
+    if !version.nil? then
+      url = "#{url}#{version}/"
+    end    
+    
+    puts "Searching for files at #{url}"
     resp = Net::HTTP.get_response(URI.parse(url))
     doc = Document.new(resp.body)    
     files = []
-    XPath.each(doc, '/resources/file') do |file| 
-      file = TFSFile.new(Utils.node_value(file, 'groupId'), Utils.node_value(file, 'artefactId'), Utils.node_value(file, 'version'), Utils.node_value(file, 'extension'), Utils.node_value(file, 'url'))
+    XPath.each(doc, '//file') do |file| 
+      file = TFSFile.new(node_value(file, 'groupId'), node_value(file, 'artefactId'), node_value(file, 'version'), node_value(file, 'extension'), node_value(file, 'url'))
       files.push file 
     end    
     files
@@ -156,11 +170,19 @@ class TFSFile
   
   def initialize(group_id, artefact_id, version, extension, url)
     @group_id = group_id
-    @artefact_id = 
+    @artefact_id = artefact_id
     @version = version
     @extension = extension
     @url = url
   end
+  
+  def name
+    "#{@artefact_id}-#{@version}.#{@extension}"
+  end
+  
+  def key
+    "#{@group_id} #{@artefact_id} #{@version}"
+  end  
 end
 
 class TFS
@@ -218,7 +240,7 @@ class TFS
       end
   end
   
-  def upgrade
+  def upgrade(download)
     files = Utils.find_files(Dir.pwd)          
     if !files.nil? and files.length > 0 then
       files.each do |file|
@@ -228,16 +250,39 @@ class TFS
         version = values['version']
         directory = values['directory']        
         extension = values['extension']        
-        files = Utils.get_files("#{@base_url}/files/#{group_id}/#{artefact_id}/")
-        files.each do |file| 
-          if Utils.is_bigger_version?(version, file.version) and !File::file?("#{directory}/#{artefact_id}-#{file.version}.#{extension}") then
-            puts "Getting newer version of #{group_id} #{artefact_id}: #{file.version}"
-            export(group_id, artefact_id, file.version)
+        http_files = Utils.get_files(group_id, artefact_id, nil)
+        http_files.each do |http_file| 
+          if Utils.is_bigger_version?(version, http_file.version) and !File::file?("#{directory}/#{artefact_id}-#{http_file.version}.#{extension}") then
+            puts "Found newer version of #{group_id} #{artefact_id}: #{http_file.version}"
+            if download then
+              export(group_id, artefact_id, file.version)              
+            end
           end
         end
       end
     else
       puts 'You have no files managed by tfs'
+    end    
+  end
+  
+  def remove(group_id, artefact_id, version)
+    file = Utils.get_files(group_id, artefact_id, version)[0]
+    current_dir = Dir.pwd
+    meta_file_loc = "#{current_dir}/.tfs/#{file.name}.tfs"
+    file_loc = "#{current_dir}/#{file.name}"
+    
+    if File::file?(meta_file_loc) then
+      puts "Removing meta-data for #{file.key} - #{meta_file_loc}"
+      File.delete(meta_file_loc)      
+    else
+      puts "#{file.key} is not managed by TFS"
+    end
+    
+    if File::file?(file_loc) then
+      puts "Removing file #{file.key} - #{current_dir}/#{file.name}"
+      File.delete(file_loc)
+    else
+      puts "#{file.key} is not managed by TFS"
     end    
   end
   
@@ -265,7 +310,7 @@ class TFS
       puts 'Files managed by tfs:'
       files.each do |file|
         values = Utils.read_file(file)        
-        puts "#{values['directory']}/#{values['fileName']}"
+        puts "#{values['groupId']} #{values['artefactId']} #{values['version']} - #{values['directory']}/#{values['fileName']}"
       end
     else
       puts 'You have no files managed by tfs'
@@ -273,26 +318,10 @@ class TFS
   end  
   
   def search(group_id, artefact_id, version)
-    url = "#{@base_url}/files/"
-    if !group_id.nil? then
-      url = "#{url}#{group_id}/"
-    end    
-    
-    if !artefact_id.nil? then
-      url = "#{url}#{artefact_id}/"
+    files = Utils.get_files(group_id, artefact_id, version)            
+    files.each do |file|
+      puts "#{file.group_id} #{file.artefact_id} #{file.version}"
     end
-    
-    if  !version.nil? then
-      url = "#{url}#{version}/"
-    end
-            
-    puts "Searching #{url}"
-    resp = Net::HTTP.get_response(URI.parse(url))
-    doc = Document.new(resp.body)    
-    
-    XPath.each(doc, '/resources/file') do |file| 
-      puts "#{Utils.node_value(file, 'groupId')} #{Utils.node_value(file, 'artefactId')}  #{Utils.node_value(file, 'version')}"
-    end    
   end
 end
 
@@ -337,7 +366,15 @@ class App_Runner
     when 'update'
       tfs.update
     when 'upgrade'
-      tfs.upgrade      
+      tfs.upgrade true
+    when 'check'
+      tfs.upgrade false  
+    when 'remove'
+      if !@group_id.nil? and !@artefact_id.nil? and !@version.nil? then
+        tfs.remove(@group_id, @artefact_id, @version)
+      else
+        puts 'You must specify groupId, artefactId and version'
+      end      
     when 'clean'
       tfs.clean
     when 'search'
