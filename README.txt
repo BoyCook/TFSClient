@@ -20,6 +20,19 @@ Files are uniquely identified with the maven style groupId/artefactId/version co
 
 When a file is exported TFS stores some meta-data on the filesystem in a '.tfs' directory (like SVN and Git do). This allows users to do things like upgrade versions and remove files.
 
+=== (Very simple) Architecture
+
+						------------
+						-TFS Client-
+						------------
+		      groupId  /            \
+		   artefactId /              \ url
+		  version    /                \
+			   		/                  \
+		-------------         ---------------------------
+		-TFS Service-         -Files available over http-
+		-------------         ---------------------------
+
 === Usage
 
 ==== search 
