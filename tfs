@@ -60,21 +60,15 @@ end
 class Utils  
   def self.find_files(dir)
     files = []
-  
-  	Dir.foreach(dir) do |entry|   
-  	  if File::directory?("#{dir}/#{entry}") and entry.match('^\.tfs') then	    
-      	Dir.foreach("#{dir}/#{entry}") do |file|   
-          if File::file?("#{dir}/#{entry}/#{file}") then
-            files.push "#{dir}/#{entry}/#{file}"
-     		  end  	  
-      	end  	    
-  	  elsif File::directory?("#{dir}/#{entry}") and entry.match('^\.') then
-        # puts "Ignoring #{dir}/#{entry}"
-   		elsif File::directory?("#{dir}/#{entry}") then
-        files.concat(find_files("#{dir}/#{entry}"))
-   		end  	  
-  	end    
-  	files
+    tfs_dir = "#{dir}/.tfs"
+    if (File::directory?(tfs_dir)) then
+        Dir.foreach(tfs_dir) do |file|   
+          if File::file?("#{tfs_dir}/#{file}") then
+            files.push "#{tfs_dir}/#{file}"
+          end     
+        end      
+    end
+    files 
   end  
   
   def self.read_file(file_name)
