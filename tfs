@@ -5,13 +5,17 @@
 #   scanning file headers to see if they are tfa managed
 #
 # == Examples
+#   Search for available files:
+#     tfs search org.cccs.jslibs jsMap 1.0
 #   File Export:
 #     tfs export org.cccs.jslibs jsMap 1.0
-#   Update existing files:
+#   Update downloaded files:
 #     tfs update 
-#   List available files:
+#   Upgrade downloaded files to latest version:
+#     tfs upgrade
+#   List downloaded files:
 #     tfs list
-#   Remove exported files:
+#   Remove all exported files:
 #     tfs clean
 #
 # == Usage 
