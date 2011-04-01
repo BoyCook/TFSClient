@@ -1,6 +1,19 @@
 === Text File Synchroniser (client): 
 A synchroniser for text based files that reside in multiple (VCS) repositories, available over HTTP(S).
 
+=== (Very simple) Architecture
+
+						------------
+						-TFS Client-
+						------------
+		      groupId  /            \
+		   artefactId /              \ url
+		  version    /                \
+			   		/                  \
+		-------------         ---------------------------
+		-TFS Service-         -Files available over http-
+		-------------         ---------------------------
+
 === Overview
 
 There are two parts to TFS. A repository (REST service) that contains a list of files and their locations, and a (ruby script) client that allows users to export, update (etc) files.
@@ -19,19 +32,6 @@ Files are uniquely identified with the maven style groupId/artefactId/version co
 </file>
 
 When a file is exported TFS stores some meta-data on the filesystem in a '.tfs' directory (like SVN and Git do). This allows users to do things like upgrade versions and remove files.
-
-=== (Very simple) Architecture
-
-						------------
-						-TFS Client-
-						------------
-		      groupId  /            \
-		   artefactId /              \ url
-		  version    /                \
-			   		/                  \
-		-------------         ---------------------------
-		-TFS Service-         -Files available over http-
-		-------------         ---------------------------
 
 === Usage
 
